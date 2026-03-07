@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.pytest_cache/
+trading_runs.db
+tmp_test_runs.db
+backtest_report.md
+backtest_report.json
