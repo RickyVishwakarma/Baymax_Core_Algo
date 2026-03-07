@@ -7,7 +7,7 @@ from pathlib import Path
 
 from trading_system.analytics import build_backtest_report, report_to_markdown
 from trading_system.config import load_config
-from trading_system.data.feed import CsvMarketDataFeed, TradingViewPollingFeed
+from trading_system.data.feed import CsvMarketDataFeed, TradingViewPollingFeed, fetch_tradingview_quote
 from trading_system.engine import TradingEngine
 from trading_system.execution.paper import PaperExecutionHandler
 from trading_system.portfolio.manager import PortfolioManager
@@ -37,6 +37,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--lookback-days", type=int, default=120, help="History window for prediction fetch")
     parser.add_argument("--gap-window", type=int, default=20, help="Recent gap samples used for prediction")
+    parser.add_argument("--quote-only", action="store_true", help="Fetch latest OHLC quote only (no prediction/trading)")
     parser.add_argument("--db-path", default="trading_runs.db", help="SQLite database path for persistent run storage")
     parser.add_argument("--disable-storage", action="store_true", help="Disable persistent run storage")
     parser.add_argument("--report-path", required=False, help="Write analytics report (.md or .json)")
@@ -64,6 +65,22 @@ def main() -> None:
         print("Avg overnight gap (%):", round(pred.avg_gap_pct, 4))
         print("Gap volatility (%):", round(pred.stdev_gap_pct, 4))
         print("Observations:", pred.observations)
+        return
+
+    if args.quote_only:
+        quote = fetch_tradingview_quote(
+            screener=cfg.data.tradingview_screener,
+            exchange=cfg.data.tradingview_exchange,
+            symbol=cfg.data.tradingview_symbol,
+            request_timeout_seconds=cfg.data.request_timeout_seconds,
+        )
+        print("Symbol:", quote.symbol)
+        print("Timestamp (UTC):", quote.ts.isoformat())
+        print("Open:", round(quote.open, 6))
+        print("High:", round(quote.high, 6))
+        print("Low:", round(quote.low, 6))
+        print("Close:", round(quote.close, 6))
+        print("Volume:", round(quote.volume, 6))
         return
 
     source = (args.source or cfg.data.source).lower()

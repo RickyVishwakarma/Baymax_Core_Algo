@@ -15,6 +15,63 @@ from trading_system.models import MarketBar
 logger = logging.getLogger(__name__)
 
 
+def fetch_tradingview_quote(
+    *,
+    screener: str,
+    exchange: str,
+    symbol: str,
+    request_timeout_seconds: int = 15,
+) -> MarketBar:
+    """Fetch a single latest OHLCV bar from TradingView scanner."""
+    payload = {
+        "symbols": {
+            "tickers": [f"{exchange}:{symbol}"],
+            "query": {"types": []},
+        },
+        "columns": ["open", "high", "low", "close", "volume", "time"],
+    }
+    data = json.dumps(payload).encode("utf-8")
+    req = request.Request(
+        url=f"https://scanner.tradingview.com/{screener}/scan",
+        data=data,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    with request.urlopen(req, timeout=max(3, request_timeout_seconds)) as resp:
+        raw = json.loads(resp.read().decode("utf-8"))
+
+    rows = raw.get("data", [])
+    if not rows:
+        raise RuntimeError("TradingView returned no rows")
+
+    cols = rows[0].get("d", [])
+    if len(cols) < 5:
+        raise RuntimeError("TradingView response missing OHLCV columns")
+
+    open_px = float(cols[0])
+    high_px = float(cols[1])
+    low_px = float(cols[2])
+    close_px = float(cols[3])
+    volume = float(cols[4])
+
+    ts_col = cols[5] if len(cols) > 5 else None
+    if isinstance(ts_col, (int, float)):
+        ts = datetime.fromtimestamp(float(ts_col), tz=timezone.utc).replace(tzinfo=None)
+    else:
+        ts = datetime.utcnow()
+
+    return MarketBar(
+        ts=ts,
+        symbol=symbol,
+        open=open_px,
+        high=high_px,
+        low=low_px,
+        close=close_px,
+        volume=volume,
+    )
+
+
 class MarketDataFeed(ABC):
     @abstractmethod
     def stream(self) -> Iterator[MarketBar]:
@@ -67,52 +124,11 @@ class TradingViewPollingFeed(MarketDataFeed):
         self._last_ts: datetime | None = None
 
     def _fetch_one(self) -> MarketBar:
-        payload = {
-            "symbols": {
-                "tickers": [f"{self.exchange}:{self.symbol}"],
-                "query": {"types": []},
-            },
-            "columns": ["open", "high", "low", "close", "volume", "time"],
-        }
-        data = json.dumps(payload).encode("utf-8")
-        req = request.Request(
-            url=self.url,
-            data=data,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-
-        with request.urlopen(req, timeout=self.request_timeout_seconds) as resp:
-            raw = json.loads(resp.read().decode("utf-8"))
-
-        rows = raw.get("data", [])
-        if not rows:
-            raise RuntimeError("TradingView returned no rows")
-
-        cols = rows[0].get("d", [])
-        if len(cols) < 5:
-            raise RuntimeError("TradingView response missing OHLCV columns")
-
-        open_px = float(cols[0])
-        high_px = float(cols[1])
-        low_px = float(cols[2])
-        close_px = float(cols[3])
-        volume = float(cols[4])
-
-        ts_col = cols[5] if len(cols) > 5 else None
-        if isinstance(ts_col, (int, float)):
-            ts = datetime.fromtimestamp(float(ts_col), tz=timezone.utc).replace(tzinfo=None)
-        else:
-            ts = datetime.utcnow()
-
-        return MarketBar(
-            ts=ts,
+        return fetch_tradingview_quote(
+            screener=self.screener,
+            exchange=self.exchange,
             symbol=self.symbol,
-            open=open_px,
-            high=high_px,
-            low=low_px,
-            close=close_px,
-            volume=volume,
+            request_timeout_seconds=self.request_timeout_seconds,
         )
 
     def stream(self) -> Iterator[MarketBar]:

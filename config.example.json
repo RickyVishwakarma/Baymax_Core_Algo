@@ -1,5 +1,5 @@
 {
-  "symbol": "BTCUSDT",
+  "symbol": "TCS",
   "starting_cash": 100000.0,
   "max_position_units": 2.0,
   "max_notional_per_order": 15000.0,
@@ -11,11 +11,12 @@
   "fee_bps": 5.0,
   "slippage_bps": 3.0,
   "data": {
+    
     "source": "tradingview",
     "csv_path": "sample_data/bars.csv",
-    "tradingview_screener": "crypto",
-    "tradingview_exchange": "BINANCE",
-    "tradingview_symbol": "BTCUSDT",
+    "tradingview_screener": "india",
+    "tradingview_exchange": "NSE",
+    "tradingview_symbol": "TCS",
     "poll_seconds": 5,
     "max_bars": 200,
     "emit_on_same_timestamp": true,

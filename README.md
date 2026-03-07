@@ -86,6 +86,9 @@ python -m trading_system.main --source csv --data sample_data/bars.csv --config 
 # Predict next open using config symbol
 python -m trading_system.main --config config.example.json --predict-next-open
 
+# Fetch only latest OHLC quote (no prediction/trading)
+python -m trading_system.main --config config.example.json --quote-only
+
 # With custom windows
 python -m trading_system.main --config config.example.json --predict-next-open --lookback-days 180 --gap-window 30
 ```
