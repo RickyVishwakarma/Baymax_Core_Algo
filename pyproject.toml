@@ -3,6 +3,10 @@ name = "automated-trading-platform"
 version = "0.1.0"
 description = "Production-oriented starter for automated trading"
 requires-python = ">=3.11"
+dependencies = [
+    "requests>=2.31.0",
+    "python-dotenv>=1.0.0"
+]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]

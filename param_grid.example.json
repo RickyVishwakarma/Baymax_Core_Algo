@@ -1,0 +1,6 @@
+{
+  "short_window": [5, 10, 15],
+  "long_window": [20, 30, 40],
+  "rsi_oversold": [30, 35],
+  "rsi_overbought": [65, 70]
+}

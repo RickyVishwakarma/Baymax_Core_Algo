@@ -3,18 +3,23 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from trading_system.analytics import build_backtest_report, report_to_markdown
 from trading_system.config import load_config
-from trading_system.data.feed import CsvMarketDataFeed, TradingViewPollingFeed, fetch_tradingview_quote
+from trading_system.data.feed import CsvMarketDataFeed, TradingViewPollingFeed, fetch_tradingview_quotes
 from trading_system.engine import TradingEngine
 from trading_system.execution.paper import PaperExecutionHandler
+from trading_system.ml.regime import MultiSymbolRegimeClassifier
 from trading_system.portfolio.manager import PortfolioManager
 from trading_system.predict import predict_next_open
 from trading_system.risk.basic import BasicRiskManager
 from trading_system.storage import SQLiteRunStore
-from trading_system.strategy.moving_average import MovingAverageCrossStrategy
+from trading_system.strategy.registry import StrategyRegistry
 
 
 def configure_logging() -> None:
@@ -68,19 +73,21 @@ def main() -> None:
         return
 
     if args.quote_only:
-        quote = fetch_tradingview_quote(
+        quotes = fetch_tradingview_quotes(
             screener=cfg.data.tradingview_screener,
             exchange=cfg.data.tradingview_exchange,
-            symbol=cfg.data.tradingview_symbol,
+            symbols=cfg.data.tradingview_symbols,
             request_timeout_seconds=cfg.data.request_timeout_seconds,
         )
-        print("Symbol:", quote.symbol)
-        print("Timestamp (UTC):", quote.ts.isoformat())
-        print("Open:", round(quote.open, 6))
-        print("High:", round(quote.high, 6))
-        print("Low:", round(quote.low, 6))
-        print("Close:", round(quote.close, 6))
-        print("Volume:", round(quote.volume, 6))
+        for quote in quotes:
+            print("Symbol:", quote.symbol)
+            print("Timestamp (UTC):", quote.ts.isoformat())
+            print("Open:", round(quote.open, 6))
+            print("High:", round(quote.high, 6))
+            print("Low:", round(quote.low, 6))
+            print("Close:", round(quote.close, 6))
+            print("Volume:", round(quote.volume, 6))
+            print("---")
         return
 
     source = (args.source or cfg.data.source).lower()
@@ -94,7 +101,7 @@ def main() -> None:
         data_feed = TradingViewPollingFeed(
             screener=cfg.data.tradingview_screener,
             exchange=cfg.data.tradingview_exchange,
-            symbol=cfg.data.tradingview_symbol,
+            symbols=cfg.data.tradingview_symbols,
             poll_seconds=cfg.data.poll_seconds,
             max_bars=max_bars,
             emit_on_same_timestamp=cfg.data.emit_on_same_timestamp,
@@ -104,39 +111,9 @@ def main() -> None:
     else:
         raise ValueError(f"Unsupported source: {source}")
 
-    strategy = MovingAverageCrossStrategy(
-        mode=cfg.strategy.mode,
-        short_window=cfg.strategy.short_window,
-        long_window=cfg.strategy.long_window,
-        order_size_units=cfg.strategy.order_size_units,
-        use_rsi=cfg.strategy.use_rsi,
-        rsi_period=cfg.strategy.rsi_period,
-        rsi_oversold=cfg.strategy.rsi_oversold,
-        rsi_overbought=cfg.strategy.rsi_overbought,
-        use_bollinger=cfg.strategy.use_bollinger,
-        bollinger_window=cfg.strategy.bollinger_window,
-        bollinger_stddev=cfg.strategy.bollinger_stddev,
-        use_macd=cfg.strategy.use_macd,
-        macd_fast=cfg.strategy.macd_fast,
-        macd_slow=cfg.strategy.macd_slow,
-        macd_signal=cfg.strategy.macd_signal,
-        min_confirmations=cfg.strategy.min_confirmations,
-        trend_ema_fast=cfg.strategy.trend_ema_fast,
-        trend_ema_slow=cfg.strategy.trend_ema_slow,
-        momentum_window=cfg.strategy.momentum_window,
-        breakout_window=cfg.strategy.breakout_window,
-        volatility_window=cfg.strategy.volatility_window,
-        atr_period=cfg.strategy.atr_period,
-        target_volatility_pct=cfg.strategy.target_volatility_pct,
-        min_signal_score=cfg.strategy.min_signal_score,
-        max_size_multiplier=cfg.strategy.max_size_multiplier,
-        use_volume_confirmation=cfg.strategy.use_volume_confirmation,
-        volume_window=cfg.strategy.volume_window,
-        regime_trend_threshold=cfg.strategy.regime_trend_threshold,
-        regime_chop_threshold=cfg.strategy.regime_chop_threshold,
-        signal_cooldown_bars=cfg.strategy.signal_cooldown_bars,
-        score_hysteresis=cfg.strategy.score_hysteresis,
-    )
+    strategy_name = cfg.strategy.get("name", "moving_average")
+    strategy_params = cfg.strategy.get("params", {})
+    strategy_factory = lambda: StrategyRegistry.build(strategy_name, **strategy_params)
     risk = BasicRiskManager(
         max_position_units=cfg.max_position_units,
         max_notional_per_order=cfg.max_notional_per_order,
@@ -146,8 +123,35 @@ def main() -> None:
         max_bar_range_pct=cfg.max_bar_range_pct,
         min_cash_buffer_pct=cfg.min_cash_buffer_pct,
     )
-    execution = PaperExecutionHandler(fee_bps=cfg.fee_bps, slippage_bps=cfg.slippage_bps)
+    execution_type = cfg.execution.get("type", "paper")
+    if execution_type == "groww":
+        from trading_system.execution.groww import GrowwExecutionHandler
+        api_key = os.getenv("GROWW_API_KEY")
+        api_secret = os.getenv("GROWW_API_SECRET")
+        if not api_key or not api_secret:
+            raise ValueError("GROWW_API_KEY and GROWW_API_SECRET must be set in .env for groww execution.")
+        execution = GrowwExecutionHandler(api_key=api_key, api_secret=api_secret)
+    else:
+        execution = PaperExecutionHandler(fee_bps=cfg.fee_bps, slippage_bps=cfg.slippage_bps)
     portfolio = PortfolioManager(starting_cash=cfg.starting_cash)
+
+    # ── AI Regime Classifier (optional) ──────────────────────────────
+    regime_classifier: MultiSymbolRegimeClassifier | None = None
+    ml_cfg = cfg.ml_regime
+    if ml_cfg.get("enabled", False):
+        regime_classifier = MultiSymbolRegimeClassifier(
+            window=int(ml_cfg.get("window", 14)),
+            block_threshold=float(ml_cfg.get("block_threshold", 0.35)),
+            pass_threshold=float(ml_cfg.get("pass_threshold", 0.55)),
+            ci_weight=float(ml_cfg.get("ci_weight", 0.5)),
+        )
+        logging.getLogger(__name__).info(
+            "ml_regime enabled window=%d block=%.2f pass=%.2f",
+            int(ml_cfg.get("window", 14)),
+            float(ml_cfg.get("block_threshold", 0.35)),
+            float(ml_cfg.get("pass_threshold", 0.55)),
+        )
+    # ─────────────────────────────────────────────────────────────────
 
     store: SQLiteRunStore | None = None
     run_id: int | None = None
@@ -164,7 +168,7 @@ def main() -> None:
                 close=bar.close,
                 equity=pf.state.equity,
                 cash=pf.state.cash,
-                units=pf.position.units,
+                units=pf.get_position(bar.symbol).units,
             )
 
     def on_fill(bar, fill, signal, pf) -> None:
@@ -178,19 +182,21 @@ def main() -> None:
         if args.config and Path(args.config).exists():
             config_obj = json.loads(Path(args.config).read_text(encoding="utf-8-sig"))
         run_id = store.start_run(
-            symbol=cfg.symbol,
+            symbol=",".join(cfg.symbols),
             source=source,
-            strategy_mode=cfg.strategy.mode,
+            strategy_mode=strategy_name,
             run_name=args.run_name,
             config_obj=config_obj,
         )
 
     engine = TradingEngine(
         data_feed=data_feed,
-        strategy=strategy,
+        strategy_factory=strategy_factory,
         risk_manager=risk,
         execution=execution,
         portfolio=portfolio,
+        trailing_stop_pct=cfg.trailing_stop_pct,
+        regime_classifier=regime_classifier,
         on_bar_callback=on_bar,
         on_fill_callback=on_fill,
     )

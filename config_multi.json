@@ -1,0 +1,33 @@
+{
+  "symbols": ["TCS", "INFY", "RELIANCE"],
+  "starting_cash": 100000.0,
+  "max_position_units": 2.0,
+  "max_notional_per_order": 15000.0,
+  "max_drawdown_pct": 0.15,
+  "max_exposure_pct": 0.50,
+  "trailing_stop_pct": 0.05,
+  "execution": {
+    "type": "paper"
+  },
+  "ml_regime": {
+    "enabled": true,
+    "window": 14,
+    "block_threshold": 0.35,
+    "pass_threshold": 0.55,
+    "ci_weight": 0.5
+  },
+  "strategy": {
+    "name": "supertrend",
+    "params": {
+      "atr_period": 10,
+      "multiplier": 3.0
+    }
+  },
+  "data": {
+    "source": "tradingview",
+    "tradingview_screener": "india",
+    "tradingview_exchange": "NSE",
+    "tradingview_symbols": ["TCS", "INFY", "RELIANCE"],
+    "poll_seconds": 1
+  }
+}

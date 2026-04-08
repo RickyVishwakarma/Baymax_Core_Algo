@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -53,6 +53,7 @@ class Position:
     symbol: str
     units: float = 0.0
     avg_entry_price: float = 0.0
+    peak_price: float = 0.0
 
 
 @dataclass(slots=True)

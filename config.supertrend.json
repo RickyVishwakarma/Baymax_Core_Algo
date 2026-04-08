@@ -1,0 +1,33 @@
+{
+  "symbol": "BTCUSDT",
+  "starting_cash": 100000.0,
+  "max_position_units": 2.0,
+  "max_notional_per_order": 15000.0,
+  "max_drawdown_pct": 0.15,
+  "allow_short": true,
+  "max_exposure_pct": 1.0,
+  "max_bar_range_pct": 0.20,
+  "min_cash_buffer_pct": 0.01,
+  "fee_bps": 5.0,
+  "slippage_bps": 3.0,
+  "strategy": {
+    "name": "supertrend",
+    "params": {
+      "atr_period": 10,
+      "multiplier": 3.0,
+      "order_size_units": 0.1
+    }
+  },
+  "data": {
+    "source": "csv",
+    "csv_path": "sample_data/bars.csv",
+    "tradingview_screener": "crypto",
+    "tradingview_exchange": "BINANCE",
+    "tradingview_symbol": "BTCUSDT",
+    "poll_seconds": 1,
+    "max_bars": null,
+    "emit_on_same_timestamp": true,
+    "request_timeout_seconds": 15,
+    "retry_delay_seconds": 3
+  }
+}
