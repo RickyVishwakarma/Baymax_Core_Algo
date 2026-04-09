@@ -23,7 +23,7 @@ from trading_system.data.feed import MarketDataFeed
 logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 
 
-# ─── Helper feeds ─────────────────────────────────────────────────────────────
+# --- Helper feeds -------------------------------------------------------------
 
 def make_choppy_bars(symbol: str, n: int = 50) -> list[MarketBar]:
     """Synthetic bars oscillating ±0.5% randomly around a fixed price."""
@@ -117,10 +117,10 @@ def run_scenario(label: str, bars: list[MarketBar]) -> int:
     return fill_count
 
 
-# ─── Also test the classifier in isolation ────────────────────────────────────
+# --- Also test the classifier in isolation ------------------------------------
 
 def test_classifier_isolation():
-    print("\n─── Unit Test: RegimeClassifier in isolation ───")
+    print("\n--- Unit Test: RegimeClassifier in isolation ---")
     
     choppy_bars = make_choppy_bars("CHOPTEST", 60)
     classifier = RegimeClassifier(window=14)
@@ -140,14 +140,14 @@ def test_classifier_isolation():
           f"score={last2.score:.3f}  regime={last2.regime}")
     assert last2.regime in ("trending", "neutral"), f"Expected trending/neutral, got {last2.regime}"
     
-    print("  ✅ Classifier isolation tests passed.")
+    print("  [OK] Classifier isolation tests passed.")
 
 
-# ─── Main ─────────────────────────────────────────────────────────────────────
+# --- Main ---------------------------------------------------------------------
 
 if __name__ == "__main__":
     print("=" * 55)
-    print("  AI REGIME CLASSIFIER — ENGINE INTEGRATION TEST")
+    print("  AI REGIME CLASSIFIER - ENGINE INTEGRATION TEST")
     print("=" * 55)
 
     test_classifier_isolation()
@@ -155,17 +155,17 @@ if __name__ == "__main__":
     choppy_fills = run_scenario("CHOPPY", make_choppy_bars("CHOP", 50))
     trending_fills = run_scenario("TRENDING", make_trending_bars("TREND", 50))
 
-    print(f"\n─── Engine Integration Results ───")
+    print(f"\n--- Engine Integration Results ---")
     print(f"  CHOPPY  market: {choppy_fills:>3} fills  (AI should BLOCK most signals)")
     print(f"  TRENDING market: {trending_fills:>3} fills  (AI should PASS signals through)")
 
     # Core assertion: trending should yield more fills than choppy
     if trending_fills > choppy_fills:
-        print(f"\n  ✅ PASSED — Regime classifier is correctly throttling choppy signals.")
+        print(f"\n  [OK] PASSED - Regime classifier is correctly throttling choppy signals.")
         print(f"     Blocked {50 - choppy_fills} out of 50 choppy signals.")
         print(f"     Permitted {trending_fills} out of 50 trending signals.")
     else:
-        print(f"\n  ⚠️  Unexpected result — review thresholds or synthetic data.")
+        print(f"\n  [WARN] Unexpected result — review thresholds or synthetic data.")
         sys.exit(1)
 
     print("=" * 55)

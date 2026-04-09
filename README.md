@@ -64,10 +64,24 @@
 | Next-open statistical price prediction | ✅ Live |
 | SQLite trade/run persistence | ✅ Live |
 | Markdown and JSON analytics reports | ✅ Live |
-| Groww brokerage live execution | ⚠️ Implemented, awaiting API subscription |
-| WebSocket real-time data feed | 🔜 Planned (Zerodha/Dhan) |
+| Groww brokerage live execution | ⚠️ Ready (awaiting API subscription) |
+| WebSocket real-time data feed | 🔜 Planned |
 | Web dashboard UI | 🔜 Planned |
 | Telegram/Discord alerts | 🔜 Planned |
+
+---
+
+## 2. Maturity Level Assessment
+
+### Overall Level: **Advanced Retail / Early Institutional (L3 of 5)**
+
+| Level | Description | Status |
+|-------|-------------|--------|
+| L1 — Beginner | Simple buy/sell scripts, no risk controls | — |
+| L2 — Intermediate | Single stock, basic strategy, paper trade | — |
+| **L3 — Advanced Retail** | **Multi-asset, real risk engine, ML filtering, optimizer** | **⭐ Current** |
+| L4 — Early Institutional | WebSocket feeds, live execution, portfolio hedging | Next step |
+| L5 — Full Institutional | Co-location, <1ms latency, SEBI registration | Hedge funds |
 
 ---
 
@@ -89,12 +103,20 @@ pip install requests python-dotenv
 
 ### 2. Configure
 
-Create a `.env` file in the project root:
+The project uses externalized environment variables for security. **Never hardcode secrets in source code.**
 
-```ini
-GROWW_API_KEY=your_key_here
-GROWW_API_SECRET=your_secret_here
-```
+1. Copy the example template:
+   ```powershell
+   cp .env.example .env
+   ```
+2. Open `.env` and enter your credentials:
+   ```ini
+   GROWW_API_KEY=eyJ...
+   GROWW_API_SECRET=your_jwt_secret
+   ```
+
+> [!CAUTION]
+> **SECURE YOUR SECRETS:** The `.env` file is ignored by Git (`.gitignore`) to prevent accidental leaks. If you accidentally committed your keys previously, ensure you rotate them immediately in the Groww Portal.
 
 ### 3. Run
 
@@ -857,14 +879,18 @@ This means the Supertrend ATR calculation for TCS is completely separate from IN
 
 ---
 
-## Environment Variables
+## Environment Variables & Security
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `GROWW_API_KEY` | Only for live trading | Groww API key |
-| `GROWW_API_SECRET` | Only for live trading | Groww API secret |
+| `GROWW_API_KEY` | Only for live trading | Groww API JWT key |
+| `GROWW_API_SECRET` | Only for live trading | Groww API JWT secret |
 
-Store in `.env` in the project root. Never commit this file.
+### Security Best Practices
+
+1. **`.env` and `.gitignore`**: The `.env` file containing your real keys must never be committed to Git. The project is pre-configured with a `.gitignore` that excludes `.env`.
+2. **Rotating Secrets**: If your GitGuardian alert fires, it means your keys are public. Go to your Groww Developer portal, **revoke the old keys**, and generate new ones.
+3. **Template**: Use [.env.example](file:///c:/Users/ricky/OneDrive/Documents/New%20project/.env.example) to share required variable names without their values.
 
 ---
 

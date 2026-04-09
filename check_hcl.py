@@ -1,9 +1,13 @@
 import time
-from trading_system.data.feed import fetch_tradingview_quote
+from trading_system.data.feed import fetch_tradingview_quotes
 
 def main():
     try:
-        bar = fetch_tradingview_quote(exchange='NSE', symbol='HCLTECH', screener='india', request_timeout_seconds=5)
+        bars = fetch_tradingview_quotes(exchange='NSE', symbols=['HCLTECH'], screener='india', request_timeout_seconds=5)
+        if not bars:
+            print("Error: No data returned")
+            return
+        bar = bars[0]
         print("HCLTECH LIVE DATA:")
         print(f"Symbol: {bar.symbol}")
         print(f"Timestamp: {bar.ts}")

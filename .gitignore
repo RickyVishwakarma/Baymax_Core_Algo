@@ -9,3 +9,4 @@ trading_runs.db
 tmp_test_runs.db
 backtest_report.md
 backtest_report.json
+.env
