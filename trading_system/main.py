@@ -56,20 +56,25 @@ def main() -> None:
     cfg = load_config(args.config)
 
     if args.predict_next_open:
-        pred = predict_next_open(
-            screener=cfg.data.tradingview_screener,
-            exchange=cfg.data.tradingview_exchange,
-            symbol=cfg.data.tradingview_symbol,
-            lookback_days=args.lookback_days,
-            gap_window=args.gap_window,
-        )
-        print("Symbol:", pred.symbol)
-        print("Reference close:", round(pred.reference_close, 2))
-        print("Predicted next open:", round(pred.predicted_open, 2))
-        print("Range (1-sigma):", round(pred.lower_bound, 2), "to", round(pred.upper_bound, 2))
-        print("Avg overnight gap (%):", round(pred.avg_gap_pct, 4))
-        print("Gap volatility (%):", round(pred.stdev_gap_pct, 4))
-        print("Observations:", pred.observations)
+        for symbol in cfg.data.tradingview_symbols:
+            try:
+                pred = predict_next_open(
+                    screener=cfg.data.tradingview_screener,
+                    exchange=cfg.data.tradingview_exchange,
+                    symbol=symbol,
+                    lookback_days=args.lookback_days,
+                    gap_window=args.gap_window,
+                )
+                print(f"--- Prediction: {pred.symbol} ---")
+                print("Reference close:", round(pred.reference_close, 2))
+                print("Predicted next open:", round(pred.predicted_open, 2))
+                print("Range (1-sigma):", round(pred.lower_bound, 2), "to", round(pred.upper_bound, 2))
+                print("Avg overnight gap (%):", round(pred.avg_gap_pct, 4))
+                print("Gap volatility (%):", round(pred.stdev_gap_pct, 4))
+                print("Observations:", pred.observations)
+                print("")
+            except Exception as e:
+                print(f"Error predicting {symbol}: {e}")
         return
 
     if args.quote_only:
@@ -210,7 +215,9 @@ def main() -> None:
 
     print("Final cash:", round(portfolio.state.cash, 2))
     print("Final equity:", round(portfolio.state.equity, 2))
-    print("Final units:", round(portfolio.position.units, 6))
+    for sym, pos in portfolio.positions.items():
+        if pos.units != 0:
+            print(f"Final units [{sym}]:", round(pos.units, 6))
 
     report = build_backtest_report(equity_points, fills_for_report)
     print("Trades:", report.trade_count, "Win rate (%):", round(report.win_rate_pct, 2), "Max DD (%):", round(report.max_drawdown_pct, 4))
@@ -226,7 +233,7 @@ def main() -> None:
             run_id=run_id,
             final_cash=portfolio.state.cash,
             final_equity=portfolio.state.equity,
-            final_units=portfolio.position.units,
+            final_units=sum(p.units for p in portfolio.positions.values()),
             status=status,
         )
 
