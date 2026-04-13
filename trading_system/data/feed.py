@@ -7,10 +7,16 @@ import csv
 import json
 import logging
 import time
+import threading
+import queue
+import asyncio
+
 import requests
 
 from trading_system.models import MarketBar
-
+from trading_system.data.dhan_manager import DhanInstrumentManager
+from trading_system.data.dhan_socket import DhanV2WebSocketClient
+from trading_system.data.aggregator import TickToBarAggregator
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +92,90 @@ class MarketDataFeed(ABC):
     @abstractmethod
     def stream(self) -> Iterator[MarketBar]:
         raise NotImplementedError
+
+
+class DhanWebSocketFeed(MarketDataFeed):
+    """Real-time streaming feed using Dhan HQ WebSocket v2."""
+
+    # Map our config strings to Dhan numeric segments
+    SEGMENT_MAP = {
+        "NSE": 1,   # NSE_EQ
+        "BSE": 7,   # BSE_EQ
+    }
+
+    def __init__(
+        self,
+        client_id: str,
+        access_token: str,
+        exchange: str,
+        symbols: list[str],
+        instrument_manager: DhanInstrumentManager
+    ):
+        self.client_id = client_id
+        self.access_token = access_token
+        self.symbols = symbols
+        self.instrument_manager = instrument_manager
+        
+        segment = self.SEGMENT_MAP.get(exchange.upper(), 1)
+        
+        # 1. Map symbols to SecurityIds
+        self.instrument_ids: list[tuple[int, int]] = []
+        self._id_to_symbol: dict[int, str] = {}
+        
+        for sym in symbols:
+            try:
+                sec_id = int(self.instrument_manager.get_security_id(exchange, sym))
+                self.instrument_ids.append((segment, sec_id))
+                self._id_to_symbol[sec_id] = sym
+            except Exception as e:
+                logger.error("Failed to map symbol %s: %s", sym, e)
+
+        if not self.instrument_ids:
+            raise RuntimeError("No valid instruments found for Dhan subscription.")
+
+        self._queue: queue.Queue[MarketBar] = queue.Queue()
+        self._aggregator = TickToBarAggregator(on_bar_complete=self._queue.put)
+        
+        self._socket_client = DhanV2WebSocketClient(
+            client_id=self.client_id,
+            access_token=self.access_token,
+            instruments=self.instrument_ids,
+            on_tick=self._on_tick
+        )
+        self._thread: threading.Thread | None = None
+
+    def _on_tick(self, sec_id: int, price: float, volume: float, ts: datetime):
+        symbol = self._id_to_symbol.get(sec_id)
+        if symbol:
+            # We use UTC in the aggregator
+            self._aggregator.handle_tick(symbol, price, volume, ts)
+
+    def _run_socket_loop(self):
+        """Asynchronous loop running in a background thread."""
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(self._socket_client.run())
+        finally:
+            loop.close()
+
+    def stream(self) -> Iterator[MarketBar]:
+        """Starts the socket thread and yields bars from the queue."""
+        logger.info("Starting Dhan WebSocket thread...")
+        self._thread = threading.Thread(target=self._run_socket_loop, daemon=True)
+        self._thread.start()
+        
+        try:
+            while True:
+                # Blocks until a 1-minute bar is finalized by the aggregator
+                bar = self._queue.get()
+                yield bar
+        except KeyboardInterrupt:
+            logger.info("Dhan stream interrupted.")
+        finally:
+            self._socket_client.stop()
+            if self._thread:
+                self._thread.join(timeout=1)
 
 
 class CsvMarketDataFeed(MarketDataFeed):

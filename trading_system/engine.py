@@ -112,17 +112,28 @@ class TradingEngine:
                 logger.info("risk_reject symbol=%s side=%s size=%.6f reason=%s", order.symbol, order.side.value, order.size, reason)
                 continue
 
-            fill = self.execution.execute(order, bar)
-            self.portfolio.apply_fill(fill)
-            self.portfolio.mark_to_market(bar)
-            if self.on_fill_callback is not None:
-                self.on_fill_callback(bar, fill, signal, self.portfolio)
-            logger.info(
-                "fill symbol=%s side=%s size=%.6f price=%.2f fee=%.4f equity=%.2f",
-                fill.symbol,
-                fill.side.value,
-                fill.size,
-                fill.fill_price,
-                fill.fee_paid,
-                self.portfolio.state.equity,
-            )
+            try:
+                fill = self.execution.execute(order, bar)
+                self.portfolio.apply_fill(fill)
+                self.portfolio.mark_to_market(bar)
+                if self.on_fill_callback is not None:
+                    self.on_fill_callback(bar, fill, signal, self.portfolio)
+                logger.info(
+                    "fill symbol=%s side=%s size=%.6f price=%.2f fee=%.4f equity=%.2f",
+                    fill.symbol,
+                    fill.side.value,
+                    fill.size,
+                    fill.fill_price,
+                    fill.fee_paid,
+                    self.portfolio.state.equity,
+                )
+            except Exception as e:
+                logger.critical(
+                    "execution_failed symbol=%s side=%s size=%.6f error=%s",
+                    order.symbol, order.side.value, order.size, e,
+                    exc_info=True
+                )
+                # We do NOT raise here to prevent the entire bot from crashing.
+                # However, this means the portfolio might be out of sync.
+                # The next bar will re-trigger the signal if still valid.
+

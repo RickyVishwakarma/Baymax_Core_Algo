@@ -1,0 +1,25 @@
+{
+  "symbols": ["DUMMY"],
+  "starting_cash": 100000.0,
+  "max_position_units": 10.0,
+  "max_notional_per_order": 50000.0,
+  "max_drawdown_pct": 0.5,
+  "max_exposure_pct": 1.0,
+  "trailing_stop_pct": 0.0,
+  "fee_bps": 0,
+  "slippage_bps": 0,
+  "execution": {
+    "type": "paper"
+  },
+  "strategy": {
+    "name": "moving_average",
+    "params": {
+      "short_window": 5,
+      "long_window": 10
+    }
+  },
+  "data": {
+    "source": "csv",
+    "csv_path": "dummy_data.csv"
+  }
+}

@@ -17,6 +17,8 @@ class DataConfig:
     emit_on_same_timestamp: bool = True
     request_timeout_seconds: int = 15
     retry_delay_seconds: int = 3
+    dhan_exchange: str = "NSE"
+    dhan_symbols: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)

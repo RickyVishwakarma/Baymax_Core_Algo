@@ -4,6 +4,7 @@ import argparse
 import json
 import logging
 import os
+import queue
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -11,9 +12,12 @@ load_dotenv()
 
 from trading_system.analytics import build_backtest_report, report_to_markdown
 from trading_system.config import load_config
-from trading_system.data.feed import CsvMarketDataFeed, TradingViewPollingFeed, fetch_tradingview_quotes
+from trading_system.data.feed import CsvMarketDataFeed, TradingViewPollingFeed, DhanWebSocketFeed, fetch_tradingview_quotes
+from trading_system.data.dhan_manager import DhanInstrumentManager
 from trading_system.engine import TradingEngine
 from trading_system.execution.paper import PaperExecutionHandler
+from trading_system.execution.dhan import DhanExecutionHandler
+from trading_system.execution.groww import GrowwExecutionHandler
 from trading_system.ml.regime import MultiSymbolRegimeClassifier
 from trading_system.portfolio.manager import PortfolioManager
 from trading_system.predict import predict_next_open
@@ -32,7 +36,7 @@ def configure_logging() -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Automated trading system runner")
     parser.add_argument("--config", required=False, help="Path to JSON config")
-    parser.add_argument("--source", choices=["csv", "tradingview"], required=False, help="Override data source")
+    parser.add_argument("--source", choices=["csv", "tradingview", "dhan_v2"], required=False, help="Override data source")
     parser.add_argument("--data", required=False, help="CSV path when source=csv")
     parser.add_argument("--max-bars", type=int, required=False, help="Stop after N bars (useful for testing)")
     parser.add_argument(
@@ -47,6 +51,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--disable-storage", action="store_true", help="Disable persistent run storage")
     parser.add_argument("--report-path", required=False, help="Write analytics report (.md or .json)")
     parser.add_argument("--run-name", required=False, help="Optional run label stored in DB")
+    parser.add_argument("--execution", choices=["paper", "dhan", "groww"], required=False, help="Execution mode")
     return parser
 
 
@@ -77,21 +82,59 @@ def main() -> None:
                 print(f"Error predicting {symbol}: {e}")
         return
 
+    source = (args.source or cfg.data.source).lower()
     if args.quote_only:
-        quotes = fetch_tradingview_quotes(
-            screener=cfg.data.tradingview_screener,
-            exchange=cfg.data.tradingview_exchange,
-            symbols=cfg.data.tradingview_symbols,
-            request_timeout_seconds=cfg.data.request_timeout_seconds,
-        )
+        if source == "tradingview":
+            quotes = fetch_tradingview_quotes(
+                screener=cfg.data.tradingview_screener,
+                exchange=cfg.data.tradingview_exchange,
+                symbols=cfg.data.tradingview_symbols,
+                request_timeout_seconds=cfg.data.request_timeout_seconds,
+            )
+        elif source == "dhan_v2":
+            # For Dhan WebSocket, we connect, wait for one bar/packet, and exit
+            client_id = os.getenv("DHAN_CLIENT_ID")
+            access_token = os.getenv("DHAN_ACCESS_TOKEN")
+            if not client_id or not access_token:
+                raise ValueError("DHAN_CLIENT_ID and DHAN_ACCESS_TOKEN must be set for dhan_v2")
+            
+            inst_mgr = DhanInstrumentManager()
+            feed = DhanWebSocketFeed(
+                client_id=client_id,
+                access_token=access_token,
+                exchange=cfg.data.dhan_exchange,
+                symbols=cfg.data.dhan_symbols or cfg.symbols,
+                instrument_manager=inst_mgr
+            )
+            print("Connecting to Dhan WebSocket for quote check (waiting up to 15s)...")
+            
+            # Start the background thread (usually done by feed.stream())
+            import threading
+            feed_thread = threading.Thread(target=feed._run_socket_loop, daemon=True)
+            feed_thread.start()
+            
+            quotes = []
+            try:
+                # We wait for the aggregator to emit bars into the queue
+                while len(quotes) < len(cfg.symbols):
+                    try:
+                        bar = feed._queue.get(timeout=15)
+                        quotes.append(bar)
+                    except queue.Empty:
+                        print("Timeout: No market data received within 15s. (Market might be closed)")
+                        break
+            except Exception as e:
+                print(f"Error during quote fetch: {e}")
+            finally:
+                feed._socket_client.stop()
+                feed_thread.join(timeout=1)
+        else:
+            raise ValueError(f"Quote only not supported for source: {source}")
+
         for quote in quotes:
             print("Symbol:", quote.symbol)
             print("Timestamp (UTC):", quote.ts.isoformat())
-            print("Open:", round(quote.open, 6))
-            print("High:", round(quote.high, 6))
-            print("Low:", round(quote.low, 6))
             print("Close:", round(quote.close, 6))
-            print("Volume:", round(quote.volume, 6))
             print("---")
         return
 
@@ -100,7 +143,7 @@ def main() -> None:
         csv_path = args.data or cfg.data.csv_path
         if not csv_path:
             raise ValueError("CSV source selected but no path provided. Use --data or data.csv_path in config.")
-        data_feed = CsvMarketDataFeed(path=csv_path, symbol=cfg.symbol)
+        data_feed = CsvMarketDataFeed(path=csv_path, symbol=cfg.symbols[0])
     elif source == "tradingview":
         max_bars = args.max_bars if args.max_bars is not None else cfg.data.max_bars
         data_feed = TradingViewPollingFeed(
@@ -112,6 +155,20 @@ def main() -> None:
             emit_on_same_timestamp=cfg.data.emit_on_same_timestamp,
             request_timeout_seconds=cfg.data.request_timeout_seconds,
             retry_delay_seconds=cfg.data.retry_delay_seconds,
+        )
+    elif source == "dhan_v2":
+        client_id = os.getenv("DHAN_CLIENT_ID")
+        access_token = os.getenv("DHAN_ACCESS_TOKEN")
+        if not client_id or not access_token:
+            raise ValueError("DHAN_CLIENT_ID and DHAN_ACCESS_TOKEN must be set in .env for dhan_v2 source.")
+            
+        inst_mgr = DhanInstrumentManager()
+        data_feed = DhanWebSocketFeed(
+            client_id=client_id,
+            access_token=access_token,
+            exchange=cfg.data.dhan_exchange,
+            symbols=cfg.data.dhan_symbols or cfg.symbols,
+            instrument_manager=inst_mgr
         )
     else:
         raise ValueError(f"Unsupported source: {source}")
@@ -128,14 +185,26 @@ def main() -> None:
         max_bar_range_pct=cfg.max_bar_range_pct,
         min_cash_buffer_pct=cfg.min_cash_buffer_pct,
     )
-    execution_type = cfg.execution.get("type", "paper")
+    execution_type = (args.execution or cfg.execution.get("type", "paper")).lower()
     if execution_type == "groww":
-        from trading_system.execution.groww import GrowwExecutionHandler
         api_key = os.getenv("GROWW_API_KEY")
         api_secret = os.getenv("GROWW_API_SECRET")
         if not api_key or not api_secret:
             raise ValueError("GROWW_API_KEY and GROWW_API_SECRET must be set in .env for groww execution.")
         execution = GrowwExecutionHandler(api_key=api_key, api_secret=api_secret)
+    elif execution_type == "dhan":
+        client_id = os.getenv("DHAN_CLIENT_ID")
+        access_token = os.getenv("DHAN_ACCESS_TOKEN")
+        if not client_id or not access_token:
+            raise ValueError("DHAN_CLIENT_ID and DHAN_ACCESS_TOKEN must be set in .env for dhan execution.")
+        inst_mgr = DhanInstrumentManager()
+        execution = DhanExecutionHandler(
+            client_id=client_id,
+            access_token=access_token,
+            instrument_manager=inst_mgr,
+            product_type=cfg.execution.get("product_type", "INTRADAY"),
+            exchange=cfg.data.dhan_exchange
+        )
     else:
         execution = PaperExecutionHandler(fee_bps=cfg.fee_bps, slippage_bps=cfg.slippage_bps)
     portfolio = PortfolioManager(starting_cash=cfg.starting_cash)
