@@ -54,6 +54,8 @@ class Position:
     units: float = 0.0
     avg_entry_price: float = 0.0
     peak_price: float = 0.0
+    entry_time: datetime | None = None
+    last_velocity: float = 0.0
 
 
 @dataclass(slots=True)

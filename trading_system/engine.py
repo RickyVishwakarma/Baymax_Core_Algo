@@ -23,6 +23,7 @@ class TradingEngine:
         execution: ExecutionHandler,
         portfolio: PortfolioManager,
         trailing_stop_pct: float = 0.0,
+        min_velocity_threshold: float = 0.0,
         regime_classifier: MultiSymbolRegimeClassifier | None = None,
         on_bar_callback=None,
         on_fill_callback=None,
@@ -34,6 +35,7 @@ class TradingEngine:
         self.execution = execution
         self.portfolio = portfolio
         self.trailing_stop_pct = trailing_stop_pct
+        self.min_velocity_threshold = min_velocity_threshold
         self.regime_classifier = regime_classifier
         self.on_bar_callback = on_bar_callback
         self.on_fill_callback = on_fill_callback
@@ -63,6 +65,23 @@ class TradingEngine:
                     if rise_pct >= self.trailing_stop_pct:
                         logger.warning("trailing_stop symbol=%s side=BUY rise=%.4f", bar.symbol, rise_pct)
                         signal = Signal(symbol=bar.symbol, side=Side.BUY, size=abs(position.units), reason="trailing_stop", score=1.0, confidence=1.0, regime="risk")
+
+            # Velocity-Based Exit Override
+            if signal is None and self.min_velocity_threshold > 0.0 and position.units != 0 and position.entry_time:
+                elapsed_sec = (bar.ts - position.entry_time).total_seconds()
+                if elapsed_sec >= 60: # 1 minute minimum hold for velocity calc
+                    minutes = elapsed_sec / 60.0
+                    pnl_pct = (bar.close - position.avg_entry_price) / position.avg_entry_price
+                    if position.units < 0:
+                        pnl_pct = -pnl_pct
+                    
+                    velocity = pnl_pct / minutes
+                    position.last_velocity = velocity
+                    
+                    if velocity < self.min_velocity_threshold:
+                        logger.warning("velocity_exit symbol=%s vel=%.6f thr=%.6f", bar.symbol, velocity, self.min_velocity_threshold)
+                        side = Side.SELL if position.units > 0 else Side.BUY
+                        signal = Signal(symbol=bar.symbol, side=side, size=abs(position.units), reason="velocity_exit", score=1.0, confidence=1.0, regime="risk")
             
             # Standard strategy evaluation
             if signal is None:
@@ -114,7 +133,7 @@ class TradingEngine:
 
             try:
                 fill = self.execution.execute(order, bar)
-                self.portfolio.apply_fill(fill)
+                self.portfolio.apply_fill(fill, bar.ts)
                 self.portfolio.mark_to_market(bar)
                 if self.on_fill_callback is not None:
                     self.on_fill_callback(bar, fill, signal, self.portfolio)

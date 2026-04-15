@@ -32,7 +32,7 @@ class PortfolioManager:
         if self.state.equity > self.state.peak_equity:
             self.state.peak_equity = self.state.equity
 
-    def apply_fill(self, fill: Fill) -> None:
+    def apply_fill(self, fill: Fill, ts: datetime) -> None:
         signed_units = fill.size if fill.side == Side.BUY else -fill.size
         cash_change = -(signed_units * fill.fill_price) - fill.fee_paid
         self.state.cash += cash_change
@@ -48,14 +48,20 @@ class PortfolioManager:
                 position.avg_entry_price = gross_cost / abs(next_units)
                 if prior_units == 0:
                     position.peak_price = fill.fill_price
+                    position.entry_time = ts
             else:
                 position.avg_entry_price = 0.0
                 position.peak_price = 0.0
+                position.entry_time = None
+                position.last_velocity = 0.0
         else:
             position.units = next_units
             if next_units == 0:
                 position.avg_entry_price = 0.0
                 position.peak_price = 0.0
+                position.entry_time = None
+                position.last_velocity = 0.0
             elif (prior_units > 0) != (next_units > 0):
                 position.avg_entry_price = fill.fill_price
                 position.peak_price = fill.fill_price
+                position.entry_time = ts

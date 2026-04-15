@@ -270,6 +270,7 @@ def main() -> None:
         execution=execution,
         portfolio=portfolio,
         trailing_stop_pct=cfg.trailing_stop_pct,
+        min_velocity_threshold=cfg.min_velocity_threshold,
         regime_classifier=regime_classifier,
         on_bar_callback=on_bar,
         on_fill_callback=on_fill,

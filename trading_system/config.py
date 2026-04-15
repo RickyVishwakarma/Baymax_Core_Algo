@@ -29,6 +29,7 @@ class TradingConfig:
     max_notional_per_order: float = 15_000.0
     max_drawdown_pct: float = 0.15
     trailing_stop_pct: float = 0.0
+    min_velocity_threshold: float = 0.0
     allow_short: bool = True
     max_exposure_pct: float = 1.0
     max_bar_range_pct: float = 0.20
@@ -77,6 +78,7 @@ def load_config(path: str | None) -> TradingConfig:
         max_notional_per_order=float(raw.get("max_notional_per_order", 15_000.0)),
         max_drawdown_pct=float(raw.get("max_drawdown_pct", 0.15)),
         trailing_stop_pct=float(raw.get("trailing_stop_pct", 0.0)),
+        min_velocity_threshold=float(raw.get("min_velocity_threshold", 0.0)),
         allow_short=bool(raw.get("allow_short", True)),
         max_exposure_pct=float(raw.get("max_exposure_pct", 1.0)),
         max_bar_range_pct=float(raw.get("max_bar_range_pct", 0.20)),
