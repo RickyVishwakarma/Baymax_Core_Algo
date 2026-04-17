@@ -5,7 +5,12 @@
   "max_notional_per_order": 15000.0,
   "max_drawdown_pct": 0.15,
   "max_exposure_pct": 0.50,
-  "trailing_stop_pct": 0.05,
+  "trailing_stop_pct": 0.0,
+  "atr_trailing_stop": {
+    "enabled": true,
+    "period": 14,
+    "multiplier": 3.0
+  },
   "min_velocity_threshold": 0.0001,
   "execution": {
     "type": "paper"
@@ -15,7 +20,13 @@
     "window": 14,
     "block_threshold": 0.35,
     "pass_threshold": 0.55,
-    "ci_weight": 0.5
+    "ci_weight": 0.5,
+    "breakout_atr_multiplier": 2.0
+  },
+  "position_sizing": {
+    "type": "risk_percent",
+    "risk_pct": 0.02,
+    "equity_pct": 0.10
   },
   "strategy": {
     "name": "supertrend",

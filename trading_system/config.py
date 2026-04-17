@@ -29,6 +29,7 @@ class TradingConfig:
     max_notional_per_order: float = 15_000.0
     max_drawdown_pct: float = 0.15
     trailing_stop_pct: float = 0.0
+    atr_trailing_stop: dict = field(default_factory=lambda: {"enabled": False, "period": 14, "multiplier": 3.0})
     min_velocity_threshold: float = 0.0
     allow_short: bool = True
     max_exposure_pct: float = 1.0
@@ -38,6 +39,7 @@ class TradingConfig:
     slippage_bps: float = 3.0
     execution: dict = field(default_factory=lambda: {"type": "paper"})
     strategy: dict = field(default_factory=lambda: {"name": "moving_average", "params": {}})
+    position_sizing: dict = field(default_factory=lambda: {"type": "fixed"})
     ml_regime: dict = field(default_factory=lambda: {"enabled": False})
     data: DataConfig = field(default_factory=DataConfig)
 
@@ -78,6 +80,7 @@ def load_config(path: str | None) -> TradingConfig:
         max_notional_per_order=float(raw.get("max_notional_per_order", 15_000.0)),
         max_drawdown_pct=float(raw.get("max_drawdown_pct", 0.15)),
         trailing_stop_pct=float(raw.get("trailing_stop_pct", 0.0)),
+        atr_trailing_stop=raw.get("atr_trailing_stop", {"enabled": False, "period": 14, "multiplier": 3.0}),
         min_velocity_threshold=float(raw.get("min_velocity_threshold", 0.0)),
         allow_short=bool(raw.get("allow_short", True)),
         max_exposure_pct=float(raw.get("max_exposure_pct", 1.0)),
@@ -87,6 +90,7 @@ def load_config(path: str | None) -> TradingConfig:
         slippage_bps=float(raw.get("slippage_bps", 3.0)),
         execution=raw.get("execution", {"type": "paper"}),
         strategy=strategy_cfg,
+        position_sizing=raw.get("position_sizing", {"type": "fixed"}),
         ml_regime=raw.get("ml_regime", {"enabled": False}),
         data=data_cfg,
     )

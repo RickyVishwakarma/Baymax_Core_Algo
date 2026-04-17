@@ -274,6 +274,8 @@ def main() -> None:
         regime_classifier=regime_classifier,
         on_bar_callback=on_bar,
         on_fill_callback=on_fill,
+        atr_trailing_stop=cfg.atr_trailing_stop,
+        position_sizing=cfg.position_sizing,
     )
 
     status = "completed"

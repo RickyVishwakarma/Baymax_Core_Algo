@@ -27,6 +27,8 @@ class TradingEngine:
         regime_classifier: MultiSymbolRegimeClassifier | None = None,
         on_bar_callback=None,
         on_fill_callback=None,
+        atr_trailing_stop: dict | None = None,
+        position_sizing: dict | None = None,
     ):
         self.data_feed = data_feed
         self.strategy_factory = strategy_factory
@@ -39,12 +41,21 @@ class TradingEngine:
         self.regime_classifier = regime_classifier
         self.on_bar_callback = on_bar_callback
         self.on_fill_callback = on_fill_callback
+        self.atr_trailing_stop = atr_trailing_stop or {"enabled": False, "period": 14, "multiplier": 3.0}
+        self.position_sizing = position_sizing or {"type": "fixed"}
+        self.atr_tracker = None
+        if self.atr_trailing_stop.get("enabled", False):
+            from trading_system.risk.atr import MultiSymbolATRTracker
+            self.atr_tracker = MultiSymbolATRTracker(period=self.atr_trailing_stop.get("period", 14))
 
     def run(self) -> None:
         for bar in self.data_feed.stream():
             self.portfolio.mark_to_market(bar)
             if self.on_bar_callback is not None:
                 self.on_bar_callback(bar, self.portfolio)
+                
+            if self.atr_tracker is not None:
+                self.atr_tracker.update(bar)
                 
             if bar.symbol not in self.strategies:
                 self.strategies[bar.symbol] = self.strategy_factory()
@@ -54,17 +65,41 @@ class TradingEngine:
             position = self.portfolio.get_position(bar.symbol)
             
             # Trailing Stop-Loss Override
-            if self.trailing_stop_pct > 0.0 and position.units != 0:
-                if position.units > 0:
-                    drop_pct = (position.peak_price - bar.close) / position.peak_price
-                    if drop_pct >= self.trailing_stop_pct:
-                        logger.warning("trailing_stop symbol=%s side=SELL drop=%.4f", bar.symbol, drop_pct)
-                        signal = Signal(symbol=bar.symbol, side=Side.SELL, size=position.units, reason="trailing_stop", score=1.0, confidence=1.0, regime="risk")
-                elif position.units < 0:
-                    rise_pct = (bar.close - position.peak_price) / position.peak_price
-                    if rise_pct >= self.trailing_stop_pct:
-                        logger.warning("trailing_stop symbol=%s side=BUY rise=%.4f", bar.symbol, rise_pct)
-                        signal = Signal(symbol=bar.symbol, side=Side.BUY, size=abs(position.units), reason="trailing_stop", score=1.0, confidence=1.0, regime="risk")
+            if position.units != 0:
+                is_trailing_stop = False
+                reason = "trailing_stop"
+                
+                # 1. Dynamic ATR Trailing Stop
+                if self.atr_tracker is not None:
+                    atr = self.atr_tracker.get_atr(bar.symbol)
+                    if atr is not None:
+                        multiplier = self.atr_trailing_stop.get("multiplier", 3.0)
+                        if position.units > 0:
+                            stop_price = position.peak_price - (multiplier * atr)
+                            if bar.close <= stop_price:
+                                is_trailing_stop = True
+                                reason = "atr_trailing_stop"
+                        elif position.units < 0:
+                            stop_price = position.peak_price + (multiplier * atr)
+                            if bar.close >= stop_price:
+                                is_trailing_stop = True
+                                reason = "atr_trailing_stop"
+                
+                # 2. Static Percentage Trailing Stop (Fallback/Secondary)
+                if not is_trailing_stop and self.trailing_stop_pct > 0.0:
+                    if position.units > 0:
+                        drop_pct = (position.peak_price - bar.close) / position.peak_price
+                        if drop_pct >= self.trailing_stop_pct:
+                            is_trailing_stop = True
+                    elif position.units < 0:
+                        rise_pct = (bar.close - position.peak_price) / position.peak_price
+                        if rise_pct >= self.trailing_stop_pct:
+                            is_trailing_stop = True
+
+                if is_trailing_stop:
+                    side = Side.SELL if position.units > 0 else Side.BUY
+                    logger.warning("%s symbol=%s side=%s", reason, bar.symbol, side.value)
+                    signal = Signal(symbol=bar.symbol, side=side, size=abs(position.units), reason=reason, score=1.0, confidence=1.0, regime="risk")
 
             # Velocity-Based Exit Override
             if signal is None and self.min_velocity_threshold > 0.0 and position.units != 0 and position.entry_time:
@@ -89,6 +124,29 @@ class TradingEngine:
 
             if not signal:
                 continue
+
+            # ── Dynamic Position Sizing ────────────────────────────────────
+            # Only apply sizing to ENTRY signals (ignore trailing stop exits)
+            if signal.reason not in ("atr_trailing_stop", "trailing_stop", "velocity_exit", "risk"):
+                sizing_type = self.position_sizing.get("type", "fixed")
+                
+                if sizing_type == "risk_percent" and self.atr_tracker is not None:
+                    atr = self.atr_tracker.get_atr(bar.symbol)
+                    if atr is not None and atr > 0:
+                        risk_pct = self.position_sizing.get("risk_pct", 0.02)
+                        risk_capital = self.portfolio.state.equity * risk_pct
+                        stop_distance = atr * self.atr_trailing_stop.get("multiplier", 3.0)
+                        if stop_distance > 0:
+                            signal.size = round(risk_capital / stop_distance, 4)
+                            logger.info("dynamic_size symbol=%s type=risk_percent size=%.4f risk_cap=%.2f stop_dist=%.2f", bar.symbol, signal.size, risk_capital, stop_distance)
+                
+                elif sizing_type == "equity_percent":
+                    equity_pct = self.position_sizing.get("equity_pct", 0.10)
+                    allocation = self.portfolio.state.equity * equity_pct
+                    if bar.close > 0:
+                        signal.size = round(allocation / bar.close, 4)
+                        logger.info("dynamic_size symbol=%s type=equity_percent size=%.4f allocation=%.2f", bar.symbol, signal.size, allocation)
+            # ─────────────────────────────────────────────────────────────
 
             # ── AI Regime Gate ────────────────────────────────────────────
             # Only fires on strategy signals (not trailing-stop overrides).

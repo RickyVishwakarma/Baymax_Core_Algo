@@ -41,6 +41,7 @@ class RegimeResult:
     choppiness_index: float | None
     adx: float | None
     bars_seen: int
+    is_breakout: bool = False
 
 
 class RegimeClassifier:
@@ -73,6 +74,7 @@ class RegimeClassifier:
         block_threshold: float = 0.35,
         pass_threshold: float = 0.55,
         ci_weight: float = 0.5,
+        breakout_atr_multiplier: float = 0.0,
     ) -> None:
         if window < 4:
             raise ValueError("window must be at least 4")
@@ -81,6 +83,7 @@ class RegimeClassifier:
         self.pass_threshold = pass_threshold
         self.ci_weight = max(0.0, min(1.0, ci_weight))
         self.adx_weight = 1.0 - self.ci_weight
+        self.breakout_atr_multiplier = breakout_atr_multiplier
 
         # Rolling OHLCV history
         self._highs: deque[float] = deque(maxlen=window + 1)
@@ -113,12 +116,27 @@ class RegimeClassifier:
         score = self._combine(ci, adx)
         regime = self._classify(score)
 
+        is_breakout = False
+        if self.breakout_atr_multiplier > 0.0 and self._prev_atr14 > 0 and len(self._closes) > 1:
+            h = list(self._highs)
+            l = list(self._lows)
+            c = list(self._closes)
+            i = len(h) - 1
+            tr = max(
+                h[i] - l[i],
+                abs(h[i] - c[i - 1]),
+                abs(l[i] - c[i - 1]),
+            )
+            if tr > (self._prev_atr14 * self.breakout_atr_multiplier):
+                is_breakout = True
+
         return RegimeResult(
             regime=regime,
             score=score,
             choppiness_index=ci,
             adx=adx,
             bars_seen=self._bars_seen,
+            is_breakout=is_breakout,
         )
 
     def is_ready(self) -> bool:
@@ -257,12 +275,14 @@ class MultiSymbolRegimeClassifier:
         block_threshold: float = 0.35,
         pass_threshold: float = 0.55,
         ci_weight: float = 0.5,
+        breakout_atr_multiplier: float = 0.0,
     ) -> None:
         self._params = dict(
             window=window,
             block_threshold=block_threshold,
             pass_threshold=pass_threshold,
             ci_weight=ci_weight,
+            breakout_atr_multiplier=breakout_atr_multiplier,
         )
         self._classifiers: dict[str, RegimeClassifier] = {}
 
@@ -274,4 +294,9 @@ class MultiSymbolRegimeClassifier:
     def should_block(self, bar: MarketBar) -> tuple[bool, RegimeResult]:
         result = self.update(bar)
         blocked = result.regime == "choppy" and result.bars_seen >= self._params["window"] + 1
+        
+        if result.is_breakout:
+            blocked = False
+            result.regime = "breakout_override"
+            
         return blocked, result

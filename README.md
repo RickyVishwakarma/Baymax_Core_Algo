@@ -8,10 +8,12 @@
 ## ⚡ Core Features
 - **Dhan HQ v2 Native**: Full support for JWT-based auth and binary WebSocket feeds.
 - **AI Regime Guard**: Uses Choppiness Index and ADX to block signals in sideways markets.
+- **AI Breakout Override**: Volatility-aware override that catches massive early trends.
+- **Dynamic Position Sizing**: Institutional 2% Risk Sizing based on real-time volatility.
+- **ATR Trailing Stop**: Volatility-adjusted trailing stop (Chandelier Exit) to protect capital.
 - **Velocity Exit Engine**: Automatically kills stagnant trades where price momentum has stalled.
 - **7-Factor Risk Engine**: Institutional-grade pre-trade validation on every order.
 - **Multi-Asset Architecture**: Run dozens of stocks in parallel on a single thread.
-- **Zero External ML Dependencies**: Pure Python implementation of all indicators and models.
 
 ---
 
@@ -64,10 +66,12 @@ The `config_multi.json` controls the personality of the bot.
 
 | Parameter | Meaning | Recommended |
 | :--- | :--- | :--- |
+| `position_sizing.type` | Sizing model (`risk_percent` or `equity_percent`) | `risk_percent` |
+| `position_sizing.risk_pct` | % of total equity to lose if stopped out | `0.02` (2%) |
+| `atr_trailing_stop.enabled`| Use dynamic ATR instead of fixed % | `true` |
+| `atr_trailing_stop.multiplier`| ATR distance to trail peak price | `3.0` |
+| `ml_regime.breakout_atr_multiplier`| TR multiple to trigger breakout override | `2.0` |
 | `min_velocity_threshold` | Min % profit growth per minute | `0.0001` (0.01%/min) |
-| `trailing_stop_pct` | Max drop from peak price before exit | `0.03` (3%) |
-| `block_threshold` | AI Score below this triggers a block | `0.35` (Filter chop) |
-| `multiplier` | Supertrend volatility width | `3.0` (Institutional) |
 
 ---
 

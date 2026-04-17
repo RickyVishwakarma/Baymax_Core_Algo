@@ -31,12 +31,28 @@ Measures the pure strength of a trend regardless of direction.
 `Total Score = (CI_Score * 0.5) + (ADX_Score * 0.5)`
 Only scores above **0.35** are allowed to place orders.
 
-## 3. The Velocity Engine (PnL per Minute)
+## 3. The Breakout Override (Alpha Boost)
+Rolling indicators (CI, ADX) suffer from lag. If an explosive move happens after a period of chop, the AI might block it. The Breakout Override solves this.
+
+- **Trigger**: `Current_True_Range > (14_Period_ATR * 2.0)`
+- **Logic**: If the current 1-minute candle's volatility is 200% larger than the recent average, an institutional move is occurring. The engine bypasses the Regime Block and forces the trade through.
+
+## 4. The Exit Engine
+
+### A. ATR-Based Dynamic Trailing Stop
+A static percentage stop (e.g., 5%) is flawed because it ignores market volatility.
+- **Formula**: `Stop_Price = Peak_Price - (ATR(14) * 3.0)`
+- **Logic**: The stop loss boundary automatically widens in highly volatile markets (preventing whipsaws) and tightens in consolidating markets to lock in profits.
+
+### B. Velocity Exit (PnL per Minute)
 Velocity measures the "Speed of Profit" to ensure capital efficiency.
-
 - **Formula**: `Velocity = (Current_PnL_Pct) / (Minutes_Held)`
-- **Scenario**: You are in a trade for 20 minutes and profit is only 0.05%.
-- **Result**: `Velocity = 0.0025%/min`. 
-- **Action**: If this is below your `min_velocity_threshold`, the bot exits immediately.
+- **Logic**: If you are in a trade for 20 minutes and profit is only 0.05%, your Velocity is `0.0025%/min`. If this falls below the threshold (e.g., `0.0001`), the engine kills the trade.
 
-**Philosophy**: "If the trend doesn't pay you for your time, give the money back and find a faster horse."
+## 5. Dynamic Position Sizing (Risk Percent Model)
+The system trades "Risk Capital" rather than fixed shares, ensuring mathematical equality across all trades regardless of asset price or volatility.
+
+- **Risk Capital**: `Total_Equity * 0.02` (Risking exactly 2% of the portfolio).
+- **Stop Distance**: `ATR(14) * 3.0`
+- **Share Size**: `Risk_Capital / Stop_Distance`
+- **Logic**: You will automatically buy fewer shares of highly volatile stocks and more shares of quiet stocks. If the trailing stop is hit, you always lose exactly 2%.
