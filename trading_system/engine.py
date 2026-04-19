@@ -29,6 +29,7 @@ class TradingEngine:
         on_fill_callback=None,
         atr_trailing_stop: dict | None = None,
         position_sizing: dict | None = None,
+        mtf_alignment: dict | None = None,
     ):
         self.data_feed = data_feed
         self.strategy_factory = strategy_factory
@@ -43,6 +44,15 @@ class TradingEngine:
         self.on_fill_callback = on_fill_callback
         self.atr_trailing_stop = atr_trailing_stop or {"enabled": False, "period": 14, "multiplier": 3.0}
         self.position_sizing = position_sizing or {"type": "fixed"}
+        self.mtf_alignment = mtf_alignment or {"enabled": False, "timeframe_minutes": 5}
+        
+        self.htf_resampler = None
+        self.htf_strategies: dict[str, Strategy] = {}
+        if self.mtf_alignment.get("enabled", False):
+            from trading_system.data.resampler import TimeframeResampler
+            tf = self.mtf_alignment.get("timeframe_minutes", 5)
+            self.htf_resampler = TimeframeResampler(timeframe_minutes=tf)
+
         self.atr_tracker = None
         if self.atr_trailing_stop.get("enabled", False):
             from trading_system.risk.atr import MultiSymbolATRTracker
@@ -57,8 +67,17 @@ class TradingEngine:
             if self.atr_tracker is not None:
                 self.atr_tracker.update(bar)
                 
+            # ── MTF Background Aggregation ─────────────────────────────────
+            if self.htf_resampler is not None:
+                completed_htf_bar = self.htf_resampler.update(bar)
+                if completed_htf_bar is not None:
+                    if completed_htf_bar.symbol not in self.htf_strategies:
+                        self.htf_strategies[completed_htf_bar.symbol] = self.strategy_factory(completed_htf_bar.symbol)
+                    self.htf_strategies[completed_htf_bar.symbol].on_bar(completed_htf_bar)
+            # ───────────────────────────────────────────────────────────────
+                
             if bar.symbol not in self.strategies:
-                self.strategies[bar.symbol] = self.strategy_factory()
+                self.strategies[bar.symbol] = self.strategy_factory(bar.symbol)
             strategy = self.strategies[bar.symbol]
             
             signal = None
@@ -147,6 +166,21 @@ class TradingEngine:
                         signal.size = round(allocation / bar.close, 4)
                         logger.info("dynamic_size symbol=%s type=equity_percent size=%.4f allocation=%.2f", bar.symbol, signal.size, allocation)
             # ─────────────────────────────────────────────────────────────
+
+            # ── MTF Alignment Gate ─────────────────────────────────────────
+            if self.mtf_alignment.get("enabled", False) and signal.reason not in ("atr_trailing_stop", "trailing_stop", "velocity_exit", "risk"):
+                if bar.symbol in self.htf_strategies:
+                    htf_strat = self.htf_strategies[bar.symbol]
+                    is_htf_bullish = htf_strat.is_bullish()
+                    
+                    if is_htf_bullish is not None:
+                        if signal.side == Side.BUY and not is_htf_bullish:
+                            logger.info("mtf_block symbol=%s side=BUY htf_trend=BEARISH", bar.symbol)
+                            continue
+                        elif signal.side == Side.SELL and is_htf_bullish:
+                            logger.info("mtf_block symbol=%s side=SELL htf_trend=BULLISH", bar.symbol)
+                            continue
+            # ───────────────────────────────────────────────────────────────
 
             # ── AI Regime Gate ────────────────────────────────────────────
             # Only fires on strategy signals (not trailing-stop overrides).

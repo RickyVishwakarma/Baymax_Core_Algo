@@ -54,7 +54,7 @@ class TestVelocityExit(unittest.TestCase):
         portfolio = PortfolioManager(starting_cash=10000)
         engine = TradingEngine(
             data_feed=MockFeed(bars),
-            strategy_factory=lambda: MockStrategy(signals),
+            strategy_factory=lambda sym=None: MockStrategy(signals),
             risk_manager=BasicRiskManager(max_position_units=100, max_notional_per_order=100000, max_drawdown_pct=0.5),
             execution=PaperExecutionHandler(fee_bps=0.0, slippage_bps=0.0),
             portfolio=portfolio,

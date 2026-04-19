@@ -175,7 +175,13 @@ def main() -> None:
 
     strategy_name = cfg.strategy.get("name", "moving_average")
     strategy_params = cfg.strategy.get("params", {})
-    strategy_factory = lambda: StrategyRegistry.build(strategy_name, **strategy_params)
+    
+    def strategy_factory(symbol: str = None):
+        if symbol and symbol in cfg.symbol_strategies:
+            override = cfg.symbol_strategies[symbol]
+            return StrategyRegistry.build(override.get("name", strategy_name), **override.get("params", {}))
+        return StrategyRegistry.build(strategy_name, **strategy_params)
+        
     risk = BasicRiskManager(
         max_position_units=cfg.max_position_units,
         max_notional_per_order=cfg.max_notional_per_order,
@@ -276,6 +282,7 @@ def main() -> None:
         on_fill_callback=on_fill,
         atr_trailing_stop=cfg.atr_trailing_stop,
         position_sizing=cfg.position_sizing,
+        mtf_alignment=cfg.mtf_alignment,
     )
 
     status = "completed"

@@ -105,3 +105,6 @@ class SupertrendStrategy(Strategy):
             )
             
         return signal
+
+    def is_bullish(self) -> bool | None:
+        return self.in_uptrend

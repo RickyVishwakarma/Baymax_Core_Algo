@@ -39,7 +39,9 @@ class TradingConfig:
     slippage_bps: float = 3.0
     execution: dict = field(default_factory=lambda: {"type": "paper"})
     strategy: dict = field(default_factory=lambda: {"name": "moving_average", "params": {}})
+    symbol_strategies: dict[str, dict] = field(default_factory=dict)
     position_sizing: dict = field(default_factory=lambda: {"type": "fixed"})
+    mtf_alignment: dict = field(default_factory=lambda: {"enabled": False, "timeframe_minutes": 5})
     ml_regime: dict = field(default_factory=lambda: {"enabled": False})
     data: DataConfig = field(default_factory=DataConfig)
 
@@ -57,6 +59,18 @@ def load_config(path: str | None) -> TradingConfig:
         strategy_cfg = {"name": "moving_average", "params": strategy_raw}
     else:
         strategy_cfg = strategy_raw
+
+    # Load Walk-Forward overrides if they exist
+    symbol_strategies = {}
+    optimized_path = Path("optimized_params.json")
+    if optimized_path.exists():
+        try:
+            overrides = json.loads(optimized_path.read_text(encoding="utf-8"))
+            for sym, data in overrides.items():
+                if "strategy" in data:
+                    symbol_strategies[sym] = data["strategy"]
+        except Exception as e:
+            pass # Failsafe: if file is corrupt, just use default config
 
     raw_max_bars = data_raw.get("max_bars", None)
     max_bars = int(raw_max_bars) if raw_max_bars is not None else None
@@ -90,7 +104,9 @@ def load_config(path: str | None) -> TradingConfig:
         slippage_bps=float(raw.get("slippage_bps", 3.0)),
         execution=raw.get("execution", {"type": "paper"}),
         strategy=strategy_cfg,
+        symbol_strategies=symbol_strategies,
         position_sizing=raw.get("position_sizing", {"type": "fixed"}),
+        mtf_alignment=raw.get("mtf_alignment", {"enabled": False, "timeframe_minutes": 5}),
         ml_regime=raw.get("ml_regime", {"enabled": False}),
         data=data_cfg,
     )
