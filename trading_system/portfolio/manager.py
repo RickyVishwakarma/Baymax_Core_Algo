@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from trading_system.models import Fill, MarketBar, PortfolioState, Position, Side
 
 
