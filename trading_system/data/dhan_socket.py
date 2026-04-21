@@ -64,21 +64,35 @@ class DhanV2WebSocketClient:
 
     async def _subscribe(self, ws: websockets.WebSocketClientProtocol):
         """Sends instrument subscription request."""
-        # Dhan v2 Subscription Packet Structure:
-        # FeedRequestCode (1 byte): 1 for Subscribe
-        # InstrumentCount (1 byte): Num of instruments
-        # Array of { ExchangeSegment (1 byte), SecurityId (Int32 / 4 bytes) }
+        # Dhan v2 Subscription Packet is JSON
+        import json
         
-        count = len(self.instruments)
-        # Format: B (RequestCode) + B (Count) + Repeated (B + I)
-        fmt = f"<BB" + "BI" * count
-        payload = [1, count] # RequestCode 1 = Subscribe
-        for seg, sid in self.instruments:
-            payload.extend([seg, int(sid)])
-            
-        data = struct.pack(fmt, *payload)
-        await ws.send(data)
-        logger.info("Subscribed to %d instruments.", count)
+        segment_map = {
+            0: "IDX_I",
+            1: "NSE_EQ",
+            2: "NSE_FNO",
+            3: "NSE_CURRENCY",
+            4: "BSE_EQ",
+            5: "MCX_COMM",
+            7: "BSE_CURRENCY",
+            8: "BSE_FNO"
+        }
+        
+        instrument_list = [
+            {
+                "ExchangeSegment": segment_map.get(seg, "NSE_EQ"),
+                "SecurityId": str(sid)
+            } for seg, sid in self.instruments
+        ]
+        
+        subscription_message = {
+            "RequestCode": 17,  # 17 = Subscribe to Quote Data
+            "InstrumentCount": len(self.instruments),
+            "InstrumentList": instrument_list
+        }
+        
+        await ws.send(json.dumps(subscription_message))
+        logger.info("Subscribed to %d instruments.", len(self.instruments))
 
     def _parse_packet(self, data: bytes):
         """Decodes the 50-byte binary Quote Packet (Code 4)."""

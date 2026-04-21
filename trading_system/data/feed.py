@@ -98,6 +98,7 @@ class DhanWebSocketFeed(MarketDataFeed):
     """Real-time streaming feed using Dhan HQ WebSocket v2."""
 
     # Map our config strings to Dhan numeric segments
+    # Used as fallback if manager doesn't return one
     SEGMENT_MAP = {
         "NSE": 1,   # NSE_EQ
         "BSE": 7,   # BSE_EQ
@@ -124,8 +125,17 @@ class DhanWebSocketFeed(MarketDataFeed):
         
         for sym in symbols:
             try:
-                sec_id = int(self.instrument_manager.get_security_id(exchange, sym))
-                self.instrument_ids.append((segment, sec_id))
+                meta = self.instrument_manager.get_instrument_metadata(exchange, sym)
+                sec_id = int(meta["security_id"])
+                seg_str = meta.get("segment", "NSE_EQ")
+                
+                str_to_int = {
+                    "IDX_I": 0, "NSE_EQ": 1, "NSE_FNO": 2, "NSE_CURRENCY": 3,
+                    "BSE_EQ": 4, "MCX_COMM": 5, "BSE_CURRENCY": 7, "BSE_FNO": 8
+                }
+                segment_int = str_to_int.get(seg_str, 1)
+                
+                self.instrument_ids.append((segment_int, sec_id))
                 self._id_to_symbol[sec_id] = sym
             except Exception as e:
                 logger.error("Failed to map symbol %s: %s", sym, e)

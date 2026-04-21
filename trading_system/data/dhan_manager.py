@@ -57,6 +57,8 @@ class DhanInstrumentManager:
                         key = f"{exch}:{symbol}"
                         # Map internal "NSE" to Dhan order-friendly "NSE_EQ" etc.
                         segment = f"{exch}_EQ" if instrument_type == "EQUITY" else f"{exch}_FNO"
+                        if instrument_type == "INDEX":
+                            segment = "IDX_I"
                         # Fallback for complex segments or if SEM_INSTRUMENT_NAME varies
                         if exch == "NSE" and instrument_type == "EQUITY": segment = "NSE_EQ"
                         elif exch == "BSE" and instrument_type == "EQUITY": segment = "BSE_EQ"
