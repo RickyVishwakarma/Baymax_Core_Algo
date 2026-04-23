@@ -24,5 +24,11 @@ class StrategyRegistry:
         elif n == "vwap":
             from trading_system.strategy.vwap import VWAPStrategy
             return VWAPStrategy(**kwargs)
+        elif n == "orb_vwap":
+            from trading_system.strategy.orb_vwap import OrbVwapStrategy
+            return OrbVwapStrategy(**kwargs)
+        elif n == "vwap_pullback":
+            from trading_system.strategy.vwap_pullback import VwapPullbackStrategy
+            return VwapPullbackStrategy(**kwargs)
         else:
             raise ValueError(f"Unknown strategy name: {name}")
